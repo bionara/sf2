@@ -1,4 +1,3 @@
-
 //inputs
 var keys_pressed = [];
 var keys_down = false;
@@ -18,6 +17,7 @@ var enemy_speed_x = 2;
 
 //world vars
 var world_floor = 207;
+var player_floor = world_floor + 20; //changes for big and small
 var world_bg = [];
 var world_window = "#world-bg";
 var world_right_side_reached = false;
@@ -33,6 +33,8 @@ var speed_x = 4;
 var gameloopId;
 var speed=2;
 var gameRunning = false;
+//prompts
+var firstmushroom = true; //used for prompts
 var canvas;
 var score = 0;
  
@@ -48,15 +50,18 @@ var player = new Player();
 function Player(){
     //set player position and move speeds
     this.hp = 100;
+    this.invulnerable = false;
+    this.hit=false;
     this.power_up = false;
     this.x =100;
-    this.y =world_floor;
+    this.y = player_floor;
     this.x_speed = 4;
     this.y_speed = 3;
     this.walking = false;
     this.is_on_platform=false;
     this.anim_strut = this.x_speed*2;
-    //set player images
+    //set player images]
+    this.img_dir = "img/playersmall/"; //can be img/playersmall/ if no powerup
     this.img_set = new Object();
     this.img_set.main = new Image();
 	this.img_set.current = new Image(); //used for updating image: punch,kick etc
@@ -82,30 +87,40 @@ function Player(){
 	}
 	this.Crouch = function(){
 		console.log('CROUCH');
-		this.img_set.current.src = "img/crouch.png";
+		this.img_set.current.src = player.img_dir + "crouch.png";
 		this.anim_dur=15;
 	}
 	this.Punch = function(){
 		console.log('PUNCH');
-		this.img_set.current.src = "img/punch.png";
+		this.img_set.current.src = player.img_dir + "punch.png";
 		this.anim_dur=15;
         this.punch = true;
 	}
 	this.Kick = function(type){
 		console.log('KICK');
-        this.img_set.current.src = "img/kick.png";
+        this.img_set.current.src = player.img_dir + "kick.png";
         if(type=="low"){
-            this.img_set.current.src = "img/kicklow.png";
+            this.img_set.current.src = player.img_dir + "kicklow.png";
         }
 		this.anim_dur=15;
         this.kick = true;
 	}
     this.Hit = function(){
         console.log('HIT!');
-        this.hit_dur_base = 100 ;
+        this.hit_dur_base = 80 ;
         this.hit_dur = this.hit_dur_base;
         this.hit = true;
+        this.invulnerable_dur_base = 220;
+        this.invulnerable_dur = this.invulnerable_dur_base ;
+        this.invulnerable = true;
+        this.invulnerable_flash_base = 30
+        this.invulnerable_flash = this.invulnerable_flash_base;
         this.anim_dur=this.hit_dur_base;
+        this.img_dir = "img/playersmall/";
+        this.power_up = false;
+        player_floor = 240;
+        this.y = player_floor;
+        last_three_combo_buttons = '';
     }
     this.Knockout = function(){
         console.log('KNOCKOUT!');
@@ -113,8 +128,11 @@ function Player(){
     }
     this.PowerUp = function(){
         console.log('POWER UP');
-        player.power_up = true;
+        this.power_up = true;
         this.anim_dur=20;
+        this.img_dir = "img/player/";
+        player_floor = world_floor;
+        this.y = world_floor;
     }
 	this.BuildCombo = function(button){
         //only build comboi if powered up with mushist
@@ -133,7 +151,7 @@ function Player(){
         var fireball = new Object();
         fireball.img_set = new Object();
         fireball.img_set.main = new Image();
-        fireball.img_set.main.src = "img/fireball.png";
+        fireball.img_set.main.src ="img/fireball.png";
         fireball.x = this.x + 65;
         fireball.y = this.y+15;
         fireballs.push(fireball);
@@ -170,70 +188,100 @@ function Player(){
 
 //a mint object to store mapping of locations for scenary items. numbers are x and y coords
 var world_layout = {
-    "coin-boxes": [ [800,80], [1800, 90],
-                  [2800, 60], [2904,80], [3600, 140],
+    "coin-boxes": [  [1800, 90],
+                  [2800, 60], [2904,80],
                   [4750,100], [5250,80], [6000,100], [6750,35], [7250, 100],
-                  [8845,190],  [8925,110], //jump on boxes to get above big pipe
-                  [10270,30], [10700, 60], [10800, 100], 
+                  [8845,190],  [8960,110], //jump on boxes to get above big pipe
+                  [9750, 120], [9850, 120], [10270,30], 
+                  [10800, 180], [10850, 120], [10900, 90], //jump up to platform
                   [12500,80], [12600, 80], 
                   [14000,30],
                   [15000,50], [15750,50], [17000,100], 
-                  [18000,50], [18700,30], [18750,50], [18800,70], [18850,90],
+                  [18000,50], [18700,90], [18790,90], [18950,60], 
                   [19500,60], [19600,80]
                   ],
+    "mushroombox":[ [780,80], [3600, 140], [7400,90], [11300,20], [14300,90], [17300,60], [19300,90]],
+
     "coins":      [ [1070,70],  [1100, 70], [1130, 70], [2070,100], [2100, 100], [2130, 100],
                     [2300, 0], [2330, 30], [2360, 50], [2390, 70], [2420, 90], //coin drop after plat
                     [3800, 0], [3800, 30], [3800, 60], [3800, 90], [3800, 120], //vert coin drop after plat
                     [7000, 90], [7030, 60], [7060, 30], [7090, 0], [7120, 30], [7150,60], [7180,90],//upside down v
+                    [9200, 0], [9200, 30], [9200, 60], [9200, 90], [9200, 120], //vert drop after big pipe
                     [7920,120], [7950, 120], [7980, 120],
-                    [10020,120], [10050, 120], [10080, 120], [10110, 120], [10140, 120],
+                    [10020,20], [10050, 20], [10080, 20], [10110, 20], [10140, 20],
+                    [12000, 30], [12000, 60], [12000, 90],
+                    [15150, 30], [15180, 30], [15210, 30], //high platform with fisher
                     [16520, 80], [16550, 80], [16580, 80],
                     [17820, 150], [17850, 150], [17880, 150],
-
+                    [18820, 150], [18850, 150], [18880, 150],
                     //booya! at 2000
                     [20000, 30], [20000, 60], [20000,90], [20000,120], [20000,150], [20030, 30], [20030, 90], [20030,150],
                     [20060, 30], [20060, 60], [20060,120], [20060,150], //b
                     [20120, 60], [20120, 90], [20120, 120], [20150, 30], [20150, 150], [20180, 60], [20180,90], [20180,120],//o
                     [20240, 60], [20240, 90], [20240, 120], [20270, 30], [20270, 150], [20300, 60], [20300,90], [20300,120],//o
                     [20360, 90], [20390, 90], // -
-                    [20450, 30], [20450, 60], [20480, 90],  [20480, 120], [20480, 150], [20510, 30], [20510, 60], [20510, 90], //y
+                    [20450, 30], [20450, 60], [20480, 90],  [20480, 120], [20480, 150], [20510, 30], [20510, 60], //y
                     [20570, 60], [20570, 90], [20570, 120], [20570, 150], [20600, 30], [20600, 90], [20630, 60], [20630,90], [20630,120], [20630, 150], //a
-                    [20690, 30], [20690, 60], [20690, 90],  [20690, 10]
+                    [20690, 30], [20690, 60], [20690, 90],  [20690, 150] //!
 
 
                   ], 
-    "mushrooms":  [ [700, world_floor]
+    "mushrooms":  [ [20000, world_floor]
                   ],
     "pipes":      [[1530,world_floor-45, 'pipeplant'], 
                    [4000,world_floor+10], [4150, world_floor-40, 'pipeplant'], [4300, world_floor-110], //stacked 3
                    [8000,world_floor+10], [8150, world_floor-40], [8300, world_floor-110], //stacked 3
+                   [8550,world_floor-35],
                    [9000,world_floor-120], //big pipe, have to coin box over 
-                   [10250, world_floor+10],
-                   [11950,world_floor-20, 'pipeplant'], [12150,world_floor-70], [12350,world_floor], //stacked 3
-                   [17350,world_floor],
-                   [18900,world_floor-30, 'pipeplant'], [19950,world_floor], [21000,world_floor-100], //stacked 3
+                   [10250, world_floor-20],
+                   [13050,world_floor-20, 'pipeplant'], [13210,world_floor-70], [13350,world_floor], //stacked 3
+                   [15350,world_floor-25],
+                   [17500,world_floor-15],
+                   [18900,world_floor-30, 'pipeplant'], [19800,world_floor] //stacked 3
 
                   ],
     "bushes":     [[1020, world_floor-82], [2350,world_floor+11], [3025,world_floor+11], [5550,world_floor+11],
-                  [7050,world_floor+11], [7450,world_floor+11], [8800,world_floor+11], 
-                  [10250,world_floor+11], [11850,world_floor+11], [12900,world_floor+11], [13750,world_floor+11], 
-                  [16520,world_floor-32], [18900,world_floor+11], [19450,world_floor+11]
+                  [7050,world_floor+11], [7450,world_floor+11], [8400,world_floor+11], 
+                  [10325,world_floor+11], [11850,world_floor+11], [12900,world_floor+11], [13750,world_floor+11], 
+                  [16520,world_floor-32], [19500,world_floor+11], [20750,world_floor+11]
                   ],
     "platforms":  [[1000,world_floor-50], [2000,world_floor], [3250,world_floor],
-                  [3500,world_floor-100], [6125,world_floor], [6700,world_floor-20], [7600,world_floor-25],                    
-                  [14500,world_floor-20],[16500,world_floor]
+                  [3500,world_floor-100], [6125,world_floor], [6900,world_floor-20], [7600,world_floor-25],  
+                  [10970,world_floor-100],                  
+                  [14500,world_floor-20],  [15100,world_floor-50], [16500,world_floor]
                   ],
-    "enemies":    [  ["fishing",700, 135], ["koopa",1150, world_floor],  ["pipeplant",2060,world_floor-60], ["koopa",2450, world_floor],
+    "enemies":    [   ["koopa",1400, world_floor],  ["pipeplant",2060,world_floor-60], ["koopa",2650, world_floor],
                   ["pipeplant", 7150, world_floor-70],
                   ["koopawing",3000, world_floor], ["koopawing",3800, world_floor],
                   ["koopawing",4250, world_floor], ["koopa",4600, world_floor], ["koopa",4800, world_floor],
+                  ["football", 6250, world_floor], ["koopawing",6500, world_floor],
+                  ["fishing",7150, 65],
                   ["football", 8900, world_floor], ["koopawing",9300, world_floor],["koopawing",9500, world_floor], 
-                  ["koopa",9550, world_floor], ["football", 12750, world_floor], 
-                  ["fishing",15000, 65], ["pipeplant",15000,world_floor-50], ["fishing",19000, 70],
-                  ["football", 22000, world_floor], ["football", 22700, world_floor],["koopawing",25500, world_floor],  ["koopa",26000, world_floor], 
-                   ["koopa",26200, world_floor],  ["pipeplant",22830,world_floor-30], ["fishing",24250, 70], ["football", 25000, world_floor],
-                   ["fishing",27500, 70], ["koopawing",27300, world_floor], ["koopawing",27400, world_floor],
-                    ["pipeplant",26830,world_floor-30]
+                  ["koopa",9550, world_floor],["koopa",10350, world_floor], ["koopawing",11000, world_floor], ["koopa",11650, world_floor], ["football", 12750, world_floor], ["koopa", 13400, world_floor],  ["koopa", 13850, world_floor],
+                  ["koopawing", 14200, world_floor], ["koopa", 14550, world_floor],  ["football", 15100, world_floor],  
+                  ["fishing",15650, 65], 
+                  ["pipeplant",15000,world_floor-50], 
+                  ["koopa", 16750, world_floor], ["koopa", 17000, world_floor],  ["football", 17500, world_floor],  ["koopawing", 17850, world_floor],
+                  ["koopa", 18800, world_floor],["koopa", 19400, world_floor],["koopawing", 19950, world_floor],
+                  ["fishing",20000, 70],
+                  ["koopawing",20000, world_floor], ["koopawing",20500, world_floor], ["koopa",20750, world_floor],
+                  ["koopa",21400, world_floor], ["koopa",21750, world_floor],
+                  ["football", 22000, world_floor], ["football", 22700, world_floor], ["koopa",23300, world_floor],  ["koopawing",23600, world_floor],
+                  ["koopa",24000, world_floor],  ["koopawing",24350, world_floor],  ["koopa",24500, world_floor], 
+                  ["pipeplant",24500,world_floor-30],
+                  ["koopa",25500, world_floor],  ["koopawing",26000, world_floor], 
+                  ["koopa",26300, world_floor], 
+                  ["fishing",23100, 70],
+                  ["football", 25000, world_floor],
+                  ["koopa", 27000, world_floor], ["koopa", 27600, world_floor], 
+                  ["fishing",28200, 70],
+                  ["koopawing",27400, world_floor], ["koopawing",27750, world_floor],
+                  ["football",28300, world_floor], ["koopa",28450, world_floor], ["koopawing",28550, world_floor],
+                  ["football",29000, world_floor], 
+                  ["fishing",32000, world_floor],
+                  ["pipeplant",31830,world_floor-30], 
+                  ["football", 33000, world_floor], ["koopa",33500, world_floor], ["koopa",33700, world_floor], ["koopawing",34250, world_floor],
+                  ["football", 34800, world_floor], ["koopawing",35450, world_floor], ["fishing",36000, 60], ["koopawing",36750, world_floor]
                   ]
 }
 
@@ -247,14 +295,17 @@ var world_layout = {
  
 //Wait for DOM to load and init game
 $(document).ready(function(){
-    console.log(world_layout['coins']);
     init();
+    ShowPrompt('intro');
     //build scenary
     $(world_layout['platforms']).each(function(i, coords){
         world_scenary.push(new Scenary("platform", coords[0], coords[1]));
     });
     $(world_layout['coin-boxes']).each(function(i, coords){
         world_scenary.push(new Scenary("coinbox", coords[0], coords[1]));
+    });
+    $(world_layout['mushroombox']).each(function(i, coords){
+        world_scenary.push(new Scenary("mushroombox", coords[0], coords[1]));
     });
     $(world_layout['coins']).each(function(i, coords){
         world_scenary.push(new Scenary("coincollect", coords[0], coords[1]));
@@ -272,7 +323,8 @@ $(document).ready(function(){
     //add one-offs
     world_scenary.push(new Scenary("mbison", 340, world_floor+15));
     world_scenary.push(new Scenary("startarrow", 355, world_floor-150));
-    world_scenary.push(new Scenary("end", 20000, world_floor-100));
+    world_scenary.push(new Scenary("end", 21000, world_floor-190)); //was at 21000
+    world_scenary.push(new Scenary("endbar", 21000, world_floor-190)); //was at 21000
     //enemies are handled differently: added as player gets to that area of screen
     
 
@@ -357,13 +409,13 @@ function initSettings()
 //load all images for game
 function loadImages()
 { 
-    player.img_set.main.src = "img/player.png";
-    player.img_set.kick.src = "img/kick.png"; 
+    player.img_set.main.src = "img/playersmall/player.png";
+    /*player.img_set.kick.src = "img/kick.png"; 
     player.img_set.punch.src = "img/punch.png"; 
     player.img_set.hadoken.src = "img/hadoken.png"; 
     player.img_set.tetsu.src = "img/tetsusprite.png";
 	player.img_set.crouch.src="img/crouch.png";
-}
+*/}
 
 
 
@@ -425,7 +477,7 @@ function gameLoop(){
                       ){
                        player_new_x_pos = player.x;
                         //stop scroll too
-                        stop_scroll = true;
+                       stop_scroll = true;
                     }
                 }  
             }
@@ -460,21 +512,28 @@ function gameLoop(){
 
         if(player.jumping_dir=="up")
         {
-
-			player.img_set.current.src = "img/jump.png";            
+			player.img_set.current.src = player.img_dir + "jump.png";            
             player.y -=4;
             //hitting coin boxes - can only hit one per jump
             if(world_scenary.length > 0){
                 $(world_scenary).each(function(i,item){
-                    if(item.type=="coinbox" &&  !player.hit_box){
+                  
+                    if((item.type=="coinbox" || item.type=="mushroombox") &&  !player.hit_box && player.y >= item.y){
+                   // console.log('py:'+player.y +' boxy' +item.y);
                         if(hitTestObject(player, item)){
                             player.hit_box = true;
                             //if it hasnt been hit, nullify it
                             if(item.has_item){
                                 item.img_set.main.src="img/items/coinboxdead.png";
                                 item.has_item = false;
-                                //create a coin - if it has one (not brown)
-                                world_scenary.push(new Scenary("coin", item.x, item.y-75))
+                                if(item.type=="coinbox"){
+                                    //create a coin - if it has one (not brown)
+                                    world_scenary.push(new Scenary("coin", item.x, item.y-75));
+                                }
+                                if(item.type=="mushroombox"){
+                                    //create a coin - if it has one (not brown)
+                                    world_scenary.push(new Scenary("mushroom", item.x+30, item.y-75));
+                                }
                                 ScoreBar(100);
                             }
                             //player.jump_dur = player.jump_dur/2;
@@ -485,7 +544,7 @@ function gameLoop(){
             }   
 		}else{ 
             //direction is down 
-			if(player.y <= world_floor){ 
+			if(player.y <= player_floor){ 
                 player.y +=4; 
             }
             //see if landed on anything good like a platform
@@ -494,11 +553,11 @@ function gameLoop(){
                 //stop the jump
                 player.jump_dur = 0; 
                 player.jumping = false;
-                player.img_set.current.src = "img/player.png";
+                player.img_set.current.src = player.img_dir + "player.png";
             }
             //if hit floor cancel altoghether
-            if(player.y >207){ 
-                player.y=207;
+            if(player.y >player_floor){ 
+                player.y=player_floor;
                 player.jump_dur=0;
                 player.jumping=false;
             }
@@ -507,35 +566,50 @@ function gameLoop(){
 		if (player.jump_dur <= 0){ 
             player.jumping = false; 
             player.hit_box=false;
-            player.img_set.current.src = "img/player.png";
-            //player.y = world_floor
+            player.img_set.current.src = player.img_dir + "player.png";
         }
 	}
     //apply gravity to player when not on platform etc
-    if(player.y != world_floor && !LandOnPlatform() && !player.hadoken && !player.jumping && !player.tetsu && !player.dragon ){
+    if(player.y != player_floor && !LandOnPlatform() && !player.hadoken && !player.jumping && !player.tetsu && !player.dragon ){
         player.y +=4;
     }
-
-
-    
-    
-    
-    
-
     
     //toggle invulnerability after being hit etc
     if(player.hit){
         player.hit_dur--;
-        player.img_set.current.src = "img/hit.png";
+        //if player was just hit, knock to floor. after a short while return to normal, but flash. base is 120
+        player.img_set.current.src = player.img_dir + "hit.png";
         if(player.hit_dur ==0){
             player.hit_dur = player.hit_dur_base;
             player.hit=false;
+            //set invulnerability for after being hit
+
         }
         //also move to floor if jumping etc
-        if(!player.is_on_platform && player.y < world_floor){
+        if(!player.is_on_platform && player.y < player_floor){
             player.y+=3;
         }
     } 
+    //invulnerability for after being hit
+    if(player.invulnerable){
+        //if player is up form the hit, make it flash
+        if(!player.hit){
+            player.img_set.current.src= player.img_dir + "player.png";
+            if(player.invulnerable_flash < player.invulnerable_flash_base/2){
+                player.img_set.current.src= "";
+                console.log('flas')
+            }
+            if(player.invulnerable_flash == 0){ 
+                player.invulnerable_flash =player.invulnerable_flash_base;
+            }
+            player.invulnerable_flash --;
+        }
+        if(player.invulnerable_dur ==0){
+            player.invulnerable = false;
+            console.log('NO MORE INVUL');
+        }
+        player.invulnerable_dur --;
+    }
     
     
     
@@ -548,40 +622,47 @@ function gameLoop(){
     if(enemies.length >0){
    
         //first did we kick/punch enemy - or even get hit by it?
-        if(!player.hit){
-            $(enemies).each(function(i, enemy){
-                if(hitTestObject(player, enemy)){
-
-                    //if its a fisher, trigger his angry mode
-                    if(enemy.type=="fishing"){
-                            enemy.img_set.main.src="img/enemies/fishingnot.png";    
-                            enemy.img_set.main2.src="img/enemies/fishingnot.png";    
-                            enemy.fishing_hit = true;   
-                            enemy.x_dir="right"; 
-                            console.log('HIT FISHING');
-                    }    
-                    else{   //not a fishe,r so see if he hit us or we hit him
-                        //1. killed enemy
-                        if(player.kick || player.punch){
-                            //if killed with special, make enemy explode and add momre points
-                            //hadoken handled in fireball hit test
-                            if( player.tetsu || player.dragon){
-                                ScoreBar(250);
-                                world_scenary.push(new Scenary("pop", enemy.x, enemy.y-enemy.img_set.main.height));
-                            }else{
-                                ScoreBar(100);
-                            }
-                            enemies.splice(i, 1);
+        $(enemies).each(function(i, enemy){
+            if(hitTestObject(player, enemy)){
+                //if its a fisher, trigger his angry mode
+                if(enemy.type=="fishing"){
+                    //make sure player not invulnerable
+                    if(!player.invulnerable){
+                        enemy.img_set.main.src="img/enemies/fishingnot.png";    
+                        enemy.img_set.main2.src="img/enemies/fishingnot.png";    
+                        enemy.fishing_hit = true;   
+                        enemy.x_dir="right"; 
+                   }    
+                }
+                else{   //not a fishe,r so see if he hit us or we hit him
+                    //1. killed enemy
+                    if(player.kick || player.punch){
+                        //if killed with special, make enemy explode and add momre points
+                        //hadoken handled in fireball hit test
+                        if( player.tetsu || player.dragon){
+                            ScoreBar(250);
+                            world_scenary.push(new Scenary("pop", enemy.x, enemy.y-enemy.img_set.main.height));
                         }else{
-                            //apply a small buffer to stop irritated players
-                                //2.got got
-                                HpBar("hit");
+                            ScoreBar(100);
+                        }
+                        //create a shell if koopa
+                        if(enemy.type=="koopa"){
+                            enemy.CreateShell();
+                        }
                             
+                        enemies.splice(i, 1);
+                    }else{
+                        console.log(player.invulnerable);
+                        if(!player.invulnerable){
+                            //apply a small buffer to stop irritated players
+                            //2.got got
+                            HpBar("hit");
                         }
                     }
                 }
-            });
-        }
+            }
+        });
+        
         //fireballs
         if(fireballs.length > 0){
             //player.img_set.current = player.img_set.kick;
@@ -601,7 +682,7 @@ function gameLoop(){
                         if(hitTestObject(enemy, shell)){
                             ScoreBar(100);
                             world_scenary.push(new Scenary("pop", enemy.x, enemy.y));
-                             enemies.splice(i, 1);
+                            enemies.splice(i, 1);
                         }
                     });
                 }
@@ -615,7 +696,7 @@ function gameLoop(){
         $(shells).each(function(i,shell){
             if(hitTestObject(player, shell)){
                 shell.kicked = true;
-                player.Kick("low"); //player.img_set.current.src = "img/kicklow.png"
+                player.Kick("low"); 
             }
         });
     }
@@ -630,8 +711,17 @@ function gameLoop(){
         }
         if(item.type=="mushroom"){
             if(hitTestObject(player, item)){
+                if(firstmushroom){
+                    ShowPrompt("firstmushroom");
+                    firstmushroom=false;
+                }
                 player.PowerUp();
                 world_scenary.splice(i,1);
+            }
+        }
+        if(item.type=="endbar"){
+           if(hitTestObject(player, item)){
+            ShowPrompt('theend');
             }
         }
      });
@@ -655,9 +745,9 @@ function gameLoop(){
         //alternate the main image to make player 'bounce' or strut
         player.anim_strut--;
         if(player.x_speed < player.anim_strut){
-            player.img_set.current.src = "img/player-strut.png";
+            player.img_set.current.src = player.img_dir + "player-strut.png";
         }else{
-            player.img_set.current.src = "img/player.png";//player.img_set.main;
+            player.img_set.current.src = player.img_dir + "player.png";//player.img_set.main;
             if(player.anim_strut==0){
                 player.anim_strut = player.x_speed * 6;
             }
@@ -722,6 +812,22 @@ function gameLoop(){
         if(!item_expired){
             canvas.drawImage(item.img_set.main, item.x , item.y);
         }
+        //mushists
+        if(item.type=="mushroom"){
+            if(item.y <= world_floor+50){
+            item.y ++;
+            item.x +=0.2;
+            }else{
+            item.x +=0.6;
+            }
+        }
+        //the bar forthe end bit - goes up n down
+        if(item.type=='endbar'){
+            if(item.dir_y == 'up'){item.y--;}
+            else{ item.y ++}
+            if(item.y >= world_floor) {  item.dir_y = 'up'}
+            if(item.y <= 30) { item.dir_y = 'down'}
+        }
     });
 
     //Draw enemies
@@ -779,6 +885,7 @@ function gameLoop(){
                 }
 
             }
+
             
 
             canvas.drawImage(enemy_img, enemy.x , enemy.y);
@@ -799,6 +906,7 @@ function gameLoop(){
         //remove if off screen
         RemoveOffscreenItems(shells, shell, i);
     });
+
     //any fireballs
     $(fireballs).each(function(i, fireball){
         fireball.x = fireball.x + fireball_speed;
@@ -827,6 +935,7 @@ function toggleGameplay()
     {
         clearInterval(gameloopId);
     }
+    console.log('toggle gameplay');
 }
 
 
@@ -856,16 +965,14 @@ function Enemy(type, x_pos, y_pos, x_dir){
     this.img_set.main2 = new Image();
     this.img_set.main2.src = "img/enemies/"+type+"2.png"; 
     //method to remove enemy
-    this.Remove = function(){
-        console.log('remove me ');
+    this.CreateShell = function(){
         //if koopa, offer a shell to the murderer
-        if(this.type=="koopa"){
+        if(this.type=="koopa" || this.type=="koopawing"){
         console.log('CREATE SHELL AT x'+this.x);
             var shell = new Shell(this.x, this.y-10);
             
             shells.push(shell);
         }
-        enemies.splice(this,1);
     }
     if(type=="bullet"){
         this.img_set.main.src="img/enemies/bullet.png";
@@ -886,13 +993,13 @@ function Enemy(type, x_pos, y_pos, x_dir){
         this.img_set.main2.src="img/enemies/pipeplant2.png";
     }
     if(type=="footballer"){
-        this.x_speed =4;
-        this.anim_strut = 20;
+        this.x_speed =6;
+        this.anim_strut = 15;
         this.img_set.main.src="img/enemies/football.png";
         this.img_set.main2.src="img/enemies/football2.png";
     }
     if(type=="fishing"){
-        this.x_speed =1;
+        this.x_speed =0.7;
         this.y=50;
         this.fishing_hit=false;
         this.anim_strut = 20;
@@ -947,7 +1054,7 @@ function Scenary(type,x_pos,y_pos){
     if(type=="bush"){
         this.img_set.main.src="img/bg/bush.png";
     }
-    if(type=="coinbox"){
+    if(type=="coinbox" || type=="mushroombox"){
         this.img_set.main.src="img/items/coinbox.png";
         this.is_hittable=true;
         this.can_land_on=true;
@@ -979,6 +1086,10 @@ function Scenary(type,x_pos,y_pos){
     }
     if(type=="end"){
         this.img_set.main.src="img/bg/end.png";
+    }
+    if(type=="endbar"){
+        this.img_set.main.src="img/bg/endbar.png";
+        this.dir_y = 'up';
     }
 }
 
@@ -1012,6 +1123,8 @@ function HpBar(event){
     //knocked out?
     if(player.hp <= 0 ){
         player.Knockout();
+        ShowPrompt('gameover');
+        console.log('KNOCKOUT...');
     }
     $("#hp-bar-hit").css('width', new_hp_pc);
 }
@@ -1036,7 +1149,7 @@ function ExecuteSpecialMoves(){
 
     //hadoken
     if(player.hadoken && player.hadoken_dur >= 0){
-        player.img_set.current.src = "img/hadokenpunch.png";
+        player.img_set.current.src = player.img_dir + "hadokenpunch.png";
         player.hadoken_dur--;
         if(player.hadoken_dur == 0){ player.hadoken = false; }
 
@@ -1045,7 +1158,7 @@ function ExecuteSpecialMoves(){
     if(player.tetsu && player.tetsu_dur >= 0){
        
          var img_no = Math.round(player.tetsu_dur / 10);
-         player.img_set.current.src = "img/tetsu/tetsu"+img_no+".png"; 
+         player.img_set.current.src = player.img_dir + "tetsu/tetsu"+img_no+".png"; 
          player.tetsu_dur --;
             //x movement done by scrolling bg
          if(player.tetsu_dur > (player.tetsu_dur_base/2)){ //up
@@ -1058,24 +1171,24 @@ function ExecuteSpecialMoves(){
                 player.tetsu_dur=0;
             }
          }
-         if (player.tetsu_dur == 0){ player.tetsu = false; player.y = world_floor;}
+         if (player.tetsu_dur == 0){ player.tetsu = false; player.y = player_floor;}
     }
     //dragon
     if(player.dragon && player.dragon_dur >= 0){
         var img_no = Math.round(player.dragon_dur / 10);
-         player.img_set.current.src = "img/dragon/dragon"+img_no+".png"; 
+         player.img_set.current.src = player.img_dir + "dragon/dragon"+img_no+".png"; 
          player.dragon_dur --;
          console.log(img_no);
         //x movement done by scrolling bg
         if(player.dragon_dur > (player.dragon_dur_base/2)){
             player.y -=6;
          }else{
-            if(player.y < world_floor - 20){ player.y +=6; }
+            if(player.y < player_floor - 20){ player.y +=6; }
          }
          if (player.dragon_dur == 0){ 
             player.dragon = false;  
-            player.img_set.current.src = "img/player.png";
-            player.y = world_floor;
+            player.img_set.current.src = player.img_dir + "player.png";
+            player.y = player_floor;
          }
     }
 }
@@ -1196,4 +1309,72 @@ function RemoveOffscreenItems(array, item, index){
 
 
 
+//////////////////////
+//                  //
+//      PROMPTS     //
+//                  //
+//////////////////////
 
+function ShowPrompt(which){
+
+toggleGameplay(); 
+            $('#info').remove();
+    var html_feedback = '';
+    switch(which){
+        case "intro":toggleGameplay(); 
+                html_feedback = "<p>WELCOME to Super Mario Street World Turbo Fighter II</p>"+ 
+                                "<p>"+
+                                "<br /> &bull; Use the arrow keys to move &amp; jump"+
+                                "<br /> &bull; Use Z to punch and X to kick"+
+                                "<br /> <br />Good luck!</p>";
+        break;
+
+        break;
+        case "firstmushroom":
+        firstmushroom = false;
+            html_feedback = "<h1>M<span class='red'>U</span>S<span class='red'>H</span>R<span class='red'>O</span>O<span class='red'>M</span>!</h1>"+
+                            "<p>This gives you SUPER POWERS!</p>"+ 
+                            "<p>"+
+                            " Hadoken: &darr; &rarr; Z"+
+                            "<br /> Dragon Punch: &rarr; &darr;  Z"+
+                            "<br />  Tetsumakiuken: &darr; &larr; X"+
+                            "</p> <p>If you get hit, you will shrink and lose these. Get hit again and it's GAME OVER, buddy!</p>";
+        break;
+
+        case "gameover":
+            html_feedback = "<h1>GAME OVER</h1>"+ 
+                            "<p>Bad news: You are dead! Good news: you <a href='' title='Play again!'>click here to play again!</a></p>";
+        break;
+
+        case "theend":
+            html_feedback = "<h1>CONGRATULATIONS!</h1>"+ 
+                            "<p>You have completed level one! And because there is only one level, that means you have completed "+
+                            "the entire game! </p>"+
+                            "<p>This game is a prototype. More good things will come soon. Thanks for playing!</p><p><a href='' title='Play again!'>Click here to play again!</a></p>";
+        break;
+
+    }
+
+    $('#container').append('<div id="info"></div>');
+    $('#info').html(html_feedback);
+    if(which != 'gameover' && which != 'theend'){
+        $('#info').append('<p>Press RETURN or ESC to close.</p>')
+    }
+
+    $('#info').fadeIn();
+    //close on return or esc
+    if(which != 'theend'){
+        $(document).keydown(function(key){
+            if(key.which == 13 || key.which == 27){
+                ClosePrompt();
+            }
+        });
+    }
+
+    function ClosePrompt(){
+        console.log('CLOSE PROMPT'); 
+        toggleGameplay(); 
+        $('#info').fadeOut(); 
+        if(which=="firstmushroom"){ toggleGameplay();}
+    }
+}
